@@ -1,0 +1,52 @@
+{
+  "name": "dsh-text-styles",
+  "version": "1.0.0",
+  "description": "Restyle the text inside DSH conversations: presets and per-target knobs for the answer body, narration, translations, emphasis, quotes, code, tool output and more 路 鏂囧瓧鏍峰紡妯″潡锛氬彲瑙嗗寲鍦拌嚜瀹氫箟瀵硅瘽鍐呭悇绫绘枃瀛楃殑鏍峰紡",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
+    "react": "^18.2.0"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "icon.svg"
+  ],
+  "scripts": {
+    "test": "node test/host.test.mjs && node test/style.test.mjs && node test/settings.test.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "theme",
+    "typography"
+  ],
+  "license": "MIT"
+}

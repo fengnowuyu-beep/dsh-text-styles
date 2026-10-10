@@ -1,0 +1,4 @@
+# Mount 鏂囧瓧鏍峰紡 as its own entry, so it can be enabled and updated on its own.
+- insert:
+    - id: text-styles
+      name: dsh-text-styles
