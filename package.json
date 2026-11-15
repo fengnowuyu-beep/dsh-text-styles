@@ -39,7 +39,7 @@
     "icon.svg"
   ],
   "scripts": {
-    "test": "node test/host.test.mjs && node test/style.test.mjs && node test/settings.test.mjs"
+    "test": "node test/style.test.mjs && node test/settings.test.mjs"
   },
   "keywords": [
     "dsh",

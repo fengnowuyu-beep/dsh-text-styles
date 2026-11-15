@@ -40,6 +40,33 @@ globalThis.HTMLElement = class HTMLElement {}
 globalThis.CSS = { escape: (value) => value }
 globalThis.MouseEvent = class MouseEvent {}
 
+/**
+ * The host route, stubbed.
+ *
+ * Starting the engine now asks for the saved document, so the harness has to answer
+ * that call: `reply` is the document the fake host returns and `calls` records every
+ * request, which is what lets the startup test prove the engine asked at all.
+ */
+let reply = { enabled: false, live: true, targets: {} }
+let failing = false
+const calls = []
+globalThis.fetch = async (url, init) => {
+  calls.push({ url: String(url), body: JSON.parse(init?.body ?? '{}') })
+  if (failing) {
+    return {
+      ok: false,
+      status: 500,
+      json: async () => ({ ok: false, error: { code: 'internal-error', message: 'host unavailable' } })
+    }
+  }
+  const snapshot = reply
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, settings: snapshot, pluginVersion: '1.0.0', settingsFile: 'stub' })
+  }
+}
+
 /** Minimal React stand-in: only identity and hook arity matter here. */
 const React = {
   createElement: (...args) => ({ args }),
@@ -72,7 +99,8 @@ const {
   textStyleCss,
   tagConversationParts,
   untagConversationParts,
-  StyleEngine
+  StyleEngine,
+  asDraft
 } = bundle.__internals
 
 /** Results collector, so one failure does not hide the rest. */
@@ -88,6 +116,22 @@ const test = (name, body) => {
     console.log(`        ${String(error.message).split('\n').join('\n        ')}`)
   }
 }
+
+/** The same collector for checks that must await the host round-trip. */
+const testAsync = async (name, body) => {
+  try {
+    await body()
+    results.push(true)
+    console.log(`  PASS  ${name}`)
+  } catch (error) {
+    results.push(false)
+    console.log(`  FAIL  ${name}`)
+    console.log(`        ${String(error.message).split('\n').join('\n        ')}`)
+  }
+}
+
+/** Let a fire-and-forget request finish. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /** A fake element that remembers its attributes and its turn. */
 function fakeElement({ turn = '1', part } = {}) {
@@ -435,6 +479,91 @@ test('a stopped engine revives instead of staying dead', () => {
   assert.equal(items[1].attributes.get('data-dsh-tm-part'), 'answer',
     'and the tags are maintained again')
   engine.stop()
+})
+
+// ── the saved document must reach the engine without the settings page ──────
+await testAsync('starting the engine loads and paints the saved document', async () => {
+  // Regression: the engine only ever learned the stored document from the settings
+  // page, so after every harness restart the conversation stayed unstyled until the
+  // reader opened that page and saved again.
+  const head = { children: [], append(node) { this.children.push(node) } }
+  const items = [fakeElement({ turn: '1' }), fakeElement({ turn: '1' })]
+  const doc = { ...fakeDocument(items), head, createElement: () => ({ dataset: {}, textContent: '', remove() {} }) }
+  reply = { enabled: true, live: false, targets: { body: { preset: 'large', options: {} } } }
+  calls.length = 0
+  try {
+    const engine = new StyleEngine()
+    engine.start(doc)
+    assert.equal(calls.length, 1, 'starting asks the host for the document')
+    assert.ok(calls[0].url.endsWith('/text-styles/api/settings.get'), `got ${calls[0].url}`)
+    await settle()
+    assert.equal(engine.settings.enabled, true, 'the answer is adopted')
+    assert.ok(engine.element.textContent.includes('font-size:16px'),
+      'and the saved look is on screen without the settings page')
+    assert.equal(items[1].attributes.get('data-dsh-tm-part'), 'answer', 'the parts are tagged too')
+    engine.stop()
+  } finally {
+    reply = { enabled: false, live: true, targets: {} }
+  }
+})
+
+await testAsync('an unsaved draft survives a background reload, and a save releases it', async () => {
+  const head = { children: [], append(node) { this.children.push(node) } }
+  const items = [fakeElement({ turn: '1' }), fakeElement({ turn: '1' })]
+  const doc = { ...fakeDocument(items), head, createElement: () => ({ dataset: {}, textContent: '', remove() {} }) }
+  const stored = { enabled: true, live: true, targets: { body: { preset: 'large', options: {} } } }
+  const draft = { enabled: true, live: true, targets: { body: { preset: 'compact', options: {} } } }
+  const later = { enabled: true, live: true, targets: { body: { preset: 'default', options: { size: 21 } } } }
+  reply = stored
+  try {
+    const engine = new StyleEngine()
+    engine.start(doc)
+    await settle()
+    assert.ok(engine.element.textContent.includes('font-size:16px'), 'the stored document is on screen')
+
+    engine.apply(draft)
+    await engine.reload()
+    assert.ok(engine.element.textContent.includes('font-size:12.5px'),
+      'a background reload must not throw the unsaved draft away')
+
+    engine.commit(draft)
+    assert.equal(engine.edited, false, 'a save ends the protection')
+    reply = later
+    await engine.reload()
+    assert.ok(engine.element.textContent.includes('font-size:21px'),
+      'from then on the host document wins again')
+    engine.stop()
+  } finally {
+    reply = { enabled: false, live: true, targets: {} }
+  }
+})
+
+await testAsync('an unreachable host does not strip the styles already on screen', async () => {
+  const head = { children: [], append(node) { this.children.push(node) } }
+  const items = [fakeElement({ turn: '1' }), fakeElement({ turn: '1' })]
+  const doc = { ...fakeDocument(items), head, createElement: () => ({ dataset: {}, textContent: '', remove() {} }) }
+  const engine = new StyleEngine()
+  engine.start(doc)
+  await settle()
+  engine.apply({ enabled: true, live: true, targets: { body: { preset: 'large', options: {} } } })
+  failing = true
+  try {
+    await engine.reload()
+    assert.ok(engine.element.textContent.includes('font-size:16px'),
+      'a failed reload keeps the last known document')
+  } finally {
+    failing = false
+    engine.stop()
+  }
+})
+
+test('the page, the host and the engine read an absent document the same way', () => {
+  const fallback = { enabled: false, live: true, targets: {} }
+  assert.deepEqual(asDraft(null), fallback)
+  assert.deepEqual(asDraft(undefined), fallback)
+  assert.deepEqual(asDraft({}), fallback)
+  assert.deepEqual(asDraft({ enabled: true, live: false, targets: { body: {} } }),
+    { enabled: true, live: false, targets: { body: {} } })
 })
 
 // ── report ──────────────────────────────────────────────────────────────────
