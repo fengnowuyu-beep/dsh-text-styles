@@ -2,6 +2,10 @@
   "name": "dsh-text-styles",
   "version": "1.0.0",
   "description": "Restyle the text inside DSH conversations: presets and per-target knobs for the answer body, narration, translations, emphasis, quotes, code, tool output and more 路 鏂囧瓧鏍峰紡妯″潡锛氬彲瑙嗗寲鍦拌嚜瀹氫箟瀵硅瘽鍐呭悇绫绘枃瀛楃殑鏍峰紡",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fengnowuyu-beep/dsh-text-styles.git"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
